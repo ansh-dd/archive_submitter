@@ -32,6 +32,9 @@ class Settings:
     archive_delay = float(os.getenv('ARCHIVE_DELAY_SECONDS', '2'))
     max_archive_retries = int(os.getenv('MAX_ARCHIVE_RETRIES', '4'))
     wayback_save_base = os.getenv('WAYBACK_SAVE_BASE', 'https://web.archive.org/save/')
+    wayback_access_key = os.getenv('WAYBACK_ACCESS_KEY', '').strip()
+    wayback_secret_key = os.getenv('WAYBACK_SECRET_KEY', '').strip()
+
 
     # Processing mode: local embedded workers or Redis/Celery.
     task_mode = os.getenv('TASK_MODE', 'embedded').lower()

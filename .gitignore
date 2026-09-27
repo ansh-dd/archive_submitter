@@ -14,3 +14,6 @@ frontend/.env.local
 
 # IDE
 .DS_Store
+
+# Celery Beat runtime files
+backend/celerybeat-schedule*

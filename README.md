@@ -1,240 +1,1064 @@
-# PRJ-09 — Robust Website Archive Submitter & Automated Backup Repository
+# PRJ-09 - Website Archive Submitter & Automated Backup Repository
 
-A VS Code-ready implementation of the Pillai internship PRJ-09 assignment. It discovers public URLs for one or more domains, normalizes and fingerprints pages, detects new/changed content, creates persistent archival jobs, records archive history, supports retry/recovery, and exposes a live Next.js dashboard.
+A full-stack website archival system developed for the Pillai internship PRJ-09 assignment.
 
-## What makes this version technically robust
+The application discovers public URLs for one or more domains, normalizes and fingerprints pages, detects new or changed content, creates persistent archive jobs, submits URLs to supported archival services, stores archive history, supports retry and recovery, and provides a searchable Next.js dashboard.
 
-- **Async bounded crawler** using `httpx.AsyncClient` with configurable concurrency.
-- **SSRF defenses**: only public HTTP/HTTPS targets are allowed; localhost/private/link-local/reserved addresses and embedded credentials are rejected. Every redirect target is revalidated.
-- **Robots-aware crawling** and same-domain scope enforcement.
-- **Response-size limits** and crawl depth/page limits to prevent runaway scans.
-- **URL normalization and deduplication** including tracking-parameter removal.
-- **SHA-256 content fingerprints** for `NEW`, `CHANGED`, and `UNCHANGED` state.
-- **Incremental archiving**: a page with the same content fingerprint is not queued again unless force re-archive is selected.
-- **Persistent idempotent archive jobs** with retry count, availability time, failure classification, and exponential backoff.
-- **Crash recovery** for stale `PROCESSING` jobs.
-- **Scheduled rescans** with local scheduler or Celery Beat.
-- **PostgreSQL + Redis + Celery production architecture** through Docker Compose.
-- **SQLite embedded mode** for easy VS Code development on Windows.
-- **System health and performance metrics** in the API/dashboard.
-- **CSV/JSON inventory export**.
-- **Optional Playwright fallback** for JavaScript-rendered pages.
-- **Docker and GitHub Actions CI**.
-- **Automated tests** for URL normalization, content hashing, archive mock behavior, and security blocking.
+---
 
-## Project structure
+## 1. Final Working Technology Stack
+
+```text
+Frontend
+- Next.js
+- TypeScript
+
+Backend
+- Python
+- FastAPI
+
+Crawler
+- HTTPX
+- BeautifulSoup
+
+JavaScript rendering
+- Playwright
+- Chromium
+
+Database
+- Supabase PostgreSQL
+
+Task broker
+- Redis Cloud
+
+Background processing
+- Celery Worker
+
+Scheduling
+- Celery Beat
+
+Automated archive service
+- Internet Archive / Wayback Machine
+
+Secondary investigated archive service
+- Archive.today / Archive.is
+- Manual-only safe handling
+```
+
+---
+
+## 2. Main Features
+
+The implemented project supports:
+
+- Single-domain crawling
+- Multi-domain crawling
+- Internal link discovery
+- sitemap.xml discovery
+- Sitemap index handling
+- robots.txt references
+- Canonical URLs
+- Pagination/navigation discovery
+- Same-domain crawling
+- URL normalization
+- Duplicate removal
+- HTTP status recording
+- Redirect handling
+- Failed/inaccessible URL tracking
+- SHA-256 page fingerprints
+- NEW / CHANGED / UNCHANGED detection
+- Incremental backup
+- Force re-archive
+- Persistent archive queue
+- Background workers
+- Retry/backoff architecture
+- Worker restart recovery
+- Real Wayback Machine submission
+- Archive URL storage
+- Archive identifier storage
+- Failed submission tracking
+- Submission history
+- Repository search
+- Archive service filtering
+- Submission status filtering
+- CSV export
+- JSON export
+- Scheduled recurring scans
+- JavaScript-rendered page discovery with Playwright
+- Health monitoring
+- Large website handling
+- Docker support
+- GitHub Actions CI
+
+---
+
+## 3. Project Structure
 
 ```text
 seo/
-├── backend/
-│   ├── app/
-│   │   ├── main.py            # FastAPI routes
-│   │   ├── crawler.py         # async crawler + sitemap/robots discovery
-│   │   ├── content.py         # stable SHA-256 page fingerprint
-│   │   ├── security.py        # SSRF/public-target validation
-│   │   ├── archive.py         # archive provider adapters
-│   │   ├── worker.py          # persistent archive worker
-│   │   ├── scheduler.py       # recurring scan scheduler
-│   │   ├── celery_app.py      # Celery configuration
-│   │   ├── tasks.py           # distributed tasks
-│   │   ├── js_renderer.py     # optional Playwright renderer
-│   │   ├── models.py          # database schema
-│   │   └── db.py
-│   ├── tests/
-│   ├── requirements.txt
-│   ├── requirements-playwright.txt
-│   └── Dockerfile
-├── frontend/
-│   ├── app/
-│   ├── lib/
-│   └── Dockerfile
-├── docker-compose.yml
-├── setup-local.bat
-├── run-backend.bat
-├── run-frontend.bat
-├── run-docker.bat
-└── .github/workflows/ci.yml
+|
++-- backend/
+|   |
+|   +-- app/
+|   |   +-- main.py
+|   |   +-- crawler.py
+|   |   +-- content.py
+|   |   +-- security.py
+|   |   +-- archive.py
+|   |   +-- worker.py
+|   |   +-- scheduler.py
+|   |   +-- celery_app.py
+|   |   +-- tasks.py
+|   |   +-- js_renderer.py
+|   |   +-- models.py
+|   |   +-- db.py
+|   |
+|   +-- tests/
+|   +-- requirements.txt
+|   +-- requirements-playwright.txt
+|   +-- .env
+|   +-- Dockerfile
+|
++-- frontend/
+|   +-- app/
+|   +-- lib/
+|   +-- package.json
+|   +-- Dockerfile
+|
++-- ARCHITECTURE.md
++-- docker-compose.yml
++-- setup-local.bat
++-- run-all.bat
++-- run-worker.bat
++-- run-beat.bat
++-- run-backend.bat
++-- run-frontend.bat
++-- run-docker.bat
++-- README.md
+|
++-- .github/
+    +-- workflows/
+        +-- ci.yml
 ```
 
-# Option A — easiest local VS Code mode (recommended first)
+---
 
-If your folder is:
+## 4. Final Architecture
+
+```text
+Browser
+   |
+   v
+Next.js Frontend
+   |
+   v
+FastAPI Backend
+   |
+   +-------------------------+
+   |                         |
+   v                         v
+Supabase PostgreSQL      Redis Cloud
+                             |
+                 +-----------+-----------+
+                 |                       |
+                 v                       v
+           Celery Worker             Celery Beat
+                 |
+        +--------+---------+
+        |                  |
+        v                  v
+     Crawler         Archive Providers
+        |                  |
+        v                  +--> Wayback Machine
+   Playwright              +--> Archive.today*
+                            +--> Mock provider
+```
+
+`Archive.today / Archive.is` is treated as manual-only because no verified documented public automation API is configured. The project does not bypass CAPTCHA, authentication, rate limits, or other access controls.
+
+See:
+
+```text
+ARCHITECTURE.md
+```
+
+for the complete technical architecture.
+
+---
+
+# 5. Local Setup
+
+The tested project path is:
 
 ```text
 D:\Ansh\Study\Sem_7\Internship\seo
 ```
 
-open that exact folder in VS Code.
+Open this folder in VS Code.
 
-### Important when replacing the older project
+---
 
-The robust version has additional database columns. If the old project already created `backend\archive.db` and you do not need its test data, delete it once:
+## 6. Backend Setup
 
-```powershell
-cd "D:\Ansh\Study\Sem_7\Internship\seo"
-.\reset-local-db.bat
-```
-
-Or manually delete `backend\archive.db`.
-
-## One-time setup
-
-From the project root:
-
-```powershell
-cd "D:\Ansh\Study\Sem_7\Internship\seo"
-.\setup-local.bat
-```
-
-Manual equivalent:
+Open PowerShell:
 
 ```powershell
 cd "D:\Ansh\Study\Sem_7\Internship\seo\backend"
+```
+
+Create the virtual environment if it does not already exist:
+
+```powershell
 python -m venv .venv
+```
+
+Install backend dependencies:
+
+```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env
-
-cd "D:\Ansh\Study\Sem_7\Internship\seo\frontend"
-npm install
-Copy-Item .env.local.example .env.local
 ```
 
-## Run locally
+---
 
-Terminal 1:
+## 7. Playwright Setup
+
+Install the optional browser-rendering dependencies:
 
 ```powershell
-cd "D:\Ansh\Study\Sem_7\Internship\seo"
-.\run-backend.bat
-```
+cd "D:\Ansh\Study\Sem_7\Internship\seo\backend"
 
-Terminal 2:
-
-```powershell
-cd "D:\Ansh\Study\Sem_7\Internship\seo"
-.\run-frontend.bat
-```
-
-Open:
-
-- Dashboard: `http://localhost:3000`
-- API: `http://127.0.0.1:8000`
-- Swagger: `http://127.0.0.1:8000/docs`
-- Health: `http://127.0.0.1:8000/api/system/health`
-
-The local configuration defaults to:
-
-```env
-DATABASE_URL=sqlite:///./archive.db
-TASK_MODE=embedded
-ARCHIVE_PROVIDER=mock
-```
-
-`mock` is intentionally a development provider; it does **not** create a real public archive.
-
-# Option B — robust Docker architecture
-
-Install Docker Desktop, then from the root:
-
-```powershell
-docker compose up --build
-```
-
-Docker starts:
-
-```text
-Next.js frontend  :3000
-FastAPI backend   :8000
-PostgreSQL        internal
-Redis             internal
-Celery worker     internal
-Celery Beat       internal
-```
-
-This is the architecture to describe in the final technical presentation even if you demonstrate local mode first.
-
-# How the incremental pipeline works
-
-```text
-Domain
-  ↓
-robots.txt + sitemap.xml + HTML links
-  ↓
-Normalize + same-domain filter + deduplicate
-  ↓
-Safe bounded HTTP fetch
-  ↓
-SHA-256 meaningful-content fingerprint
-  ↓
-NEW / CHANGED / UNCHANGED
-  ↓
-Persistent repository
-  ↓
-Archive only new/changed content
-  ↓
-Idempotent queue
-  ↓
-Archive provider
-  ↓
-Success / retry with backoff / permanent failure
-  ↓
-Historical archive record
-```
-
-# Scheduled scans
-
-Open a domain details page and click **Enable daily schedule**. The local scheduler checks due scans in embedded mode. Under Docker, Celery Beat dispatches due scans.
-
-# Optional Playwright support
-
-Use this only after the normal crawler is working:
-
-```powershell
-cd backend
 .\.venv\Scripts\python.exe -m pip install -r requirements-playwright.txt
+```
+
+Install Chromium:
+
+```powershell
 .\.venv\Scripts\python.exe -m playwright install chromium
 ```
 
-Then set:
+Enable it in `.env`:
 
 ```env
 ENABLE_PLAYWRIGHT=true
 ```
 
-Playwright is a fallback, not the primary crawler, because browser rendering is significantly heavier than HTTP crawling.
+Playwright is used as a fallback for JavaScript-heavy websites when static HTML contains too few useful internal links.
 
-# Archive provider note
+---
 
-Keep `ARCHIVE_PROVIDER=mock` during development. The `wayback` adapter is isolated in `backend/app/archive.py`. Before a final real submission demonstration, verify the archival service's current published submission method and terms. This project intentionally does not bypass CAPTCHA, authentication, access controls, or rate limits.
+## 8. Backend Environment Configuration
 
-# Run tests
+Create:
+
+```text
+backend\.env
+```
+
+Never commit real passwords, Redis credentials, database passwords, or Wayback API keys to GitHub.
+
+Example configuration:
+
+```env
+DATABASE_URL=postgresql+psycopg://USERNAME:PASSWORD@HOST:PORT/postgres
+
+REDIS_URL=redis://default:PASSWORD@REDIS_HOST:REDIS_PORT/0
+CELERY_BROKER_URL=redis://default:PASSWORD@REDIS_HOST:REDIS_PORT/0
+CELERY_RESULT_BACKEND=redis://default:PASSWORD@REDIS_HOST:REDIS_PORT/0
+
+TASK_MODE=celery
+EMBEDDED_WORKER=false
+
+ARCHIVE_PROVIDER=wayback
+
+WAYBACK_SAVE_BASE=https://web.archive.org/save
+WAYBACK_ACCESS_KEY=YOUR_ACCESS_KEY
+WAYBACK_SECRET_KEY=YOUR_SECRET_KEY
+
+ENABLE_PLAYWRIGHT=true
+```
+
+The final tested environment uses:
+
+```text
+Supabase PostgreSQL
+Redis Cloud
+Celery
+Wayback Machine
+Playwright
+```
+
+---
+
+## 9. Wayback Machine Credentials
+
+Internet Archive Save Page Now authentication requires credentials.
+
+Generate the required credentials from your Internet Archive account.
+
+Store them only in:
+
+```text
+backend\.env
+```
+
+using:
+
+```env
+WAYBACK_ACCESS_KEY=YOUR_ACCESS_KEY
+WAYBACK_SECRET_KEY=YOUR_SECRET_KEY
+```
+
+Do not expose these credentials in screenshots, GitHub commits, documentation, or demonstration videos.
+
+---
+
+## 10. Frontend Setup
+
+Open another PowerShell terminal:
 
 ```powershell
-cd backend
+cd "D:\Ansh\Study\Sem_7\Internship\seo\frontend"
+```
+
+Install packages:
+
+```powershell
+npm.cmd install
+```
+
+Using `npm.cmd` is recommended on Windows if PowerShell blocks `npm.ps1`.
+
+---
+
+# 11. Running the Project
+
+## Start FastAPI + Celery Worker + Celery Beat
+
+From the project root:
+
+```powershell
+cd "D:\Ansh\Study\Sem_7\Internship\seo"
+
+.\run-all.bat
+```
+
+This starts three backend processes:
+
+```text
+FastAPI
+Celery Worker
+Celery Beat
+```
+
+---
+
+## Start Frontend
+
+In another terminal:
+
+```powershell
+cd "D:\Ansh\Study\Sem_7\Internship\seo\frontend"
+
+npm.cmd run dev
+```
+
+---
+
+## Open the Application
+
+Dashboard:
+
+```text
+http://localhost:3000
+```
+
+Queue:
+
+```text
+http://localhost:3000/queue
+```
+
+Repository:
+
+```text
+http://localhost:3000/repository
+```
+
+FastAPI:
+
+```text
+http://127.0.0.1:8000
+```
+
+Swagger:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Health:
+
+```text
+http://127.0.0.1:8000/api/system/health
+```
+
+---
+
+# 12. Health Check
+
+A healthy final environment should return values similar to:
+
+```json
+{
+  "api": "healthy",
+  "database": "healthy",
+  "redis": "healthy",
+  "task_mode": "celery",
+  "archive_provider": "wayback",
+  "crawler_concurrency": 5,
+  "max_response_size_mb": 10
+}
+```
+
+This confirms that the application can communicate with:
+
+```text
+FastAPI
+Supabase PostgreSQL
+Redis
+Celery configuration
+Wayback provider configuration
+```
+
+---
+
+# 13. Website Crawling Workflow
+
+```text
+User adds domain
+    |
+    v
+Start scan
+    |
+    v
+Celery crawl task
+    |
+    v
+robots.txt / sitemap / HTML discovery
+    |
+    v
+Playwright fallback if required
+    |
+    v
+URL normalization
+    |
+    v
+Same-domain validation
+    |
+    v
+Duplicate removal
+    |
+    v
+HTTP fetch
+    |
+    v
+SHA-256 fingerprint
+    |
+    v
+Supabase repository
+```
+
+---
+
+# 14. URL Discovery
+
+The crawler can investigate and combine:
+
+- Internal HTML links
+- sitemap.xml
+- Sitemap indexes
+- robots.txt references
+- Canonical URLs
+- Pagination
+- Public navigation links
+- Relevant feed links
+- JavaScript-rendered links
+
+The crawler remains within the configured hostname.
+
+---
+
+# 15. Incremental Backup
+
+Every fetched page receives a SHA-256 fingerprint.
+
+The system determines whether the page is:
+
+```text
+NEW
+CHANGED
+UNCHANGED
+```
+
+A normal:
+
+```text
+Archive new/changed
+```
+
+operation avoids unnecessarily archiving unchanged content.
+
+The user can explicitly select:
+
+```text
+Force re-archive all
+```
+
+to create another historical snapshot.
+
+---
+
+# 16. Archive Submission Workflow
+
+```text
+Archive new/changed
+    |
+    v
+Persistent archive job
+    |
+    v
+PostgreSQL archive_jobs
+    |
+    v
+Redis
+    |
+    v
+Celery Worker
+    |
+    v
+Internet Archive Save Page Now
+    |
+    v
+Receive job ID
+    |
+    v
+Poll capture status
+    |
+    +--> SUCCESS
+    |
+    +--> FAILED
+    |
+    v
+Store archive result
+    |
+    v
+Repository
+```
+
+---
+
+# 17. Real Wayback Machine Integration
+
+The project uses the Internet Archive / Wayback Machine as the primary automated archive provider.
+
+Successful captures generate a real URL similar to:
+
+```text
+https://web.archive.org/web/<timestamp>/<original_url>
+```
+
+The final implementation was tested successfully with real Wayback captures.
+
+The application stores:
+
+- Archive service
+- Archive identifier
+- Archive URL
+- Submission timestamp
+- Completion timestamp
+- HTTP information
+- Status
+- Error information
+- Content fingerprint
+
+---
+
+# 18. Archive.today / Archive.is
+
+Archive.today / Archive.is was investigated as a secondary target.
+
+The backend includes an Archive.today provider representation.
+
+Because no verified documented public automation API is configured, the provider intentionally returns:
+
+```text
+MANUAL_SUBMISSION_REQUIRED
+```
+
+The application does not attempt to bypass:
+
+- CAPTCHA
+- Authentication
+- Access controls
+- Rate limits
+- Security restrictions
+
+This behavior is intentional.
+
+---
+
+# 19. Persistent Queue and Crash Recovery
+
+Archive jobs are stored persistently in PostgreSQL.
+
+The following recovery scenario was successfully tested:
+
+```text
+Celery Worker stopped
+    |
+    v
+Archive job created
+    |
+    v
+Job remains PENDING
+    |
+    v
+Worker restarted
+    |
+    v
+Worker reconnects to Redis
+    |
+    v
+Pending job automatically processed
+    |
+    v
+Wayback submission succeeds
+    |
+    v
+Status becomes SUCCESS
+```
+
+This proves that worker interruption does not lose queued archive work.
+
+---
+
+# 20. Failure Handling
+
+Failed archive jobs are stored instead of crashing the system.
+
+A failure record can contain:
+
+```text
+FAILED
+service
+retry_count
+error_code
+error_message
+created_at
+started_at
+completed_at
+duration
+URL
+domain
+```
+
+One failed URL does not stop processing of other jobs.
+
+---
+
+# 21. Repository Page
+
+Open:
+
+```text
+http://localhost:3000/repository
+```
+
+The Repository page supports:
+
+- Search by domain
+- Search by URL
+- Filter by archive service
+- Filter by submission status
+- View successful submissions
+- View failed submissions
+- View timestamps
+- View content fingerprints
+- View processing duration
+- Open stored archive URLs
+- View multiple submissions for the same URL
+
+---
+
+# 22. Queue Page
+
+Open:
+
+```text
+http://localhost:3000/queue
+```
+
+The Queue page is used to inspect archive processing state and historical jobs.
+
+Possible states include:
+
+```text
+PENDING
+PROCESSING
+SUCCESS
+FAILED
+```
+
+---
+
+# 23. Scheduled Scans
+
+Open a domain detail page and select:
+
+```text
+Enable daily schedule
+```
+
+Celery Beat periodically checks for due scheduled scans.
+
+Flow:
+
+```text
+Celery Beat
+    |
+    v
+Check due scans
+    |
+    v
+Dispatch task
+    |
+    v
+Redis
+    |
+    v
+Celery Worker
+    |
+    v
+Crawler
+```
+
+---
+
+# 24. JavaScript-Rendered Websites
+
+Playwright is used as a browser-rendering fallback.
+
+The renderer:
+
+1. Opens Chromium.
+2. Loads the page.
+3. Waits for DOM content.
+4. Waits for links.
+5. Scrolls the page.
+6. Extracts rendered HTML.
+7. Returns links to the crawler.
+
+This allows discovery on JavaScript-heavy public pages while respecting normal access restrictions.
+
+---
+
+# 25. Large Website Handling
+
+The architecture supports large URL inventories through:
+
+- Async crawling
+- Bounded concurrency
+- Database persistence
+- Background workers
+- Redis task distribution
+- URL deduplication
+- Incremental scans
+- Crawl page limits
+- Crawl depth limits
+- Response-size limits
+- Persistent queues
+
+Multi-thousand-URL inventories were tested during development.
+
+---
+
+# 26. Export
+
+A domain inventory can be exported as:
+
+```text
+CSV
+JSON
+```
+
+from the domain detail page.
+
+Example backend endpoints:
+
+```text
+/api/domains/<id>/export?format=csv
+/api/domains/<id>/export?format=json
+```
+
+---
+
+# 27. Security Features
+
+The backend includes SSRF protections.
+
+The crawler rejects inappropriate targets such as:
+
+- localhost
+- Private IP ranges
+- Loopback IPs
+- Link-local IPs
+- Reserved addresses
+- Multicast addresses
+- `.local` hosts
+- Credential-bearing URLs
+
+Only:
+
+```text
+http
+https
+```
+
+are accepted.
+
+Redirect targets are revalidated before they are followed.
+
+Additional controls include:
+
+- Same-domain scope
+- robots.txt handling
+- Response-size limits
+- Timeouts
+- Crawl depth limits
+- Crawl page limits
+- Controlled concurrency
+- Archive rate-limit handling
+- No CAPTCHA bypass
+
+---
+
+# 28. Running Backend Tests
+
+From:
+
+```powershell
+cd "D:\Ansh\Study\Sem_7\Internship\seo\backend"
+```
+
+run:
+
+```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Expected for this package:
+The exact pass count may change as tests are added, so use the actual current test output rather than relying on an old fixed number.
+
+---
+
+# 29. Recommended Final Demonstration
+
+A strong demonstration sequence is:
+
+1. Start FastAPI, Celery Worker, Celery Beat, and Next.js.
+2. Open the health endpoint.
+3. Show PostgreSQL and Redis as healthy.
+4. Add a new domain.
+5. Start URL discovery.
+6. Show discovered URL inventory.
+7. Explain HTTP status and SHA-256 fingerprint.
+8. Queue one URL for real Wayback archival.
+9. Show `PENDING`.
+10. Show Celery processing the archive request.
+11. Show `SUCCESS`.
+12. Click `Open archive`.
+13. Show the real Wayback Machine snapshot.
+14. Show a failed archive submission in Repository.
+15. Stop all Celery workers.
+16. Queue a one-URL archive job.
+17. Show that it remains `PENDING`.
+18. Restart the Celery worker.
+19. Show that the stored pending job is automatically resumed.
+20. Show the final `SUCCESS`.
+21. Re-scan an unchanged page.
+22. Explain incremental backup.
+23. Show multiple domains.
+24. Show Repository search.
+25. Show service and status filters.
+26. Show archive submission history.
+27. Show CSV/JSON export.
+28. Show scheduled scans.
+29. Explain Playwright support.
+30. Explain Archive.today safe/manual-only handling.
+
+---
+
+# 30. Verified Development Results
+
+During development, the project successfully demonstrated:
 
 ```text
-11 passed
+Real Wayback capture                 PASS
+Stored archive URL                   PASS
+Open archive link                    PASS
+Supabase PostgreSQL                  PASS
+Redis Cloud                          PASS
+Celery worker                        PASS
+Celery Beat                          PASS
+Persistent pending queue             PASS
+Worker restart recovery              PASS
+Failed submission recording          PASS
+Incremental fingerprinting           PASS
+Multi-domain repository              PASS
+Repository search                    PASS
+Service/status filtering             PASS
+CSV/JSON export                      PASS
+Playwright rendering                 PASS
+Large URL inventories                PASS
 ```
 
-# Recommended demonstration
+---
 
-1. Show `/api/system/health` or the dashboard system health section.
-2. Add a public domain.
-3. Start scan and show bounded crawler progress/results.
-4. Open URL inventory and explain normalization, robots status, content size, and SHA-256 fingerprint.
-5. Queue **Archive new/changed** with mock provider.
-6. Show queue state, duration, retries, and historical repository.
-7. Scan the same site again and show `UNCHANGED` pages being skipped.
-8. Modify/test against a site with changed content and show `CHANGED` detection.
-9. Stop/restart the backend and show queue persistence/recovery.
-10. Enable a scheduled scan.
-11. Export inventory to CSV/JSON.
-12. Explain how Docker switches the same application to PostgreSQL + Redis + Celery workers.
+# 31. Docker
 
-# Main viva terms
+A Docker Compose configuration is included for containerized deployment.
 
-**Asynchronous crawling, bounded concurrency, URL normalization, robots.txt, SSRF protection, content fingerprinting, incremental backup, idempotency, persistent queue, exponential backoff, failure recovery, provider abstraction, scheduled jobs, PostgreSQL, Redis, Celery, observability, Docker, CI/CD.**
+Run:
+
+```powershell
+docker compose up --build
+```
+
+The Docker architecture can provide:
+
+```text
+Next.js
+FastAPI
+PostgreSQL
+Redis
+Celery Worker
+Celery Beat
+```
+
+The actively tested development configuration uses managed Supabase PostgreSQL and Redis Cloud.
+
+---
+
+# 32. Important Security Note
+
+Never commit the following to GitHub:
+
+```text
+backend/.env
+Database passwords
+Redis passwords
+Wayback access keys
+Wayback secret keys
+Supabase credentials
+```
+
+Use `.env.example` with placeholders for public repositories.
+
+---
+
+# 33. Main Viva Terms
+
+Important concepts used in this project:
+
+**Asynchronous crawling**
+
+**Bounded concurrency**
+
+**URL normalization**
+
+**URL deduplication**
+
+**robots.txt**
+
+**sitemap.xml**
+
+**SSRF protection**
+
+**SHA-256 content fingerprinting**
+
+**Incremental backup**
+
+**Idempotency**
+
+**Persistent queue**
+
+**Redis**
+
+**Celery**
+
+**Celery Beat**
+
+**PostgreSQL**
+
+**Supabase**
+
+**Exponential backoff**
+
+**Failure recovery**
+
+**Worker restart recovery**
+
+**Provider abstraction**
+
+**Wayback Save Page Now**
+
+**Playwright**
+
+**Background processing**
+
+**Scheduled tasks**
+
+**Docker**
+
+**CI/CD**
+
+**Repository search**
+
+**Historical archive records**
+
+---
+
+# 34. Final Result
+
+The final application functions as a website archival repository rather than only a crawler.
+
+A user can:
+
+```text
+Add one or more domains
+        |
+        v
+Discover public URLs
+        |
+        v
+Track new and changed pages
+        |
+        v
+Create persistent archive jobs
+        |
+        v
+Submit pages to Wayback Machine
+        |
+        v
+Store success/failure results
+        |
+        v
+Open real archive snapshots
+        |
+        v
+Search historical submissions
+        |
+        v
+Repeat scans incrementally
+```
+
+PRJ-09 therefore combines crawling, automation, archival APIs, persistent queues, databases, browser rendering, incremental backup, scheduling, failure recovery, and a searchable web interface.

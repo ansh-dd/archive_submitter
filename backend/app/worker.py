@@ -1,7 +1,7 @@
 from __future__ import annotations
 import time
 from datetime import datetime, timedelta, timezone
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import selectinload
 
 from .archive import get_provider
 from .config import settings
@@ -36,7 +36,7 @@ def _claim_job(db):
     now = utcnow()
     query = (
         db.query(ArchiveJob)
-        .options(joinedload(ArchiveJob.url))
+        .options(selectinload(ArchiveJob.url))
         .filter(
             ArchiveJob.status.in_(['PENDING', 'RETRY']),
             ArchiveJob.available_at <= now,
